@@ -3,6 +3,8 @@ from .models import Conference, Location, State
 from common.json import ModelEncoder
 from django.views.decorators.http import require_http_methods
 import json
+from  .acls import get_location_photo
+#get_weather_data
 
 class LocationListEncoder(ModelEncoder):
     model = Location
@@ -16,6 +18,7 @@ class LocationDetailEncoder(ModelEncoder):
         "room_count",
         "created",
         "updated",
+        "picture_url",
     ]
 
     def get_extra_data(self, o):
@@ -37,6 +40,7 @@ class ConferenceDetailEncoder(ModelEncoder):
         "created",
         "updated",
         "location",
+        # "weather",
     ]
     encoders = {
         "location": LocationListEncoder(),
@@ -102,11 +106,17 @@ def api_list_conferences(request):
 def api_show_conference(request, id):
     if request.method == "GET":
         conference = Conference.objects.get(id=id)
+        # weather = get_weather_data(conference.location.city, conference.location.state.abbreviation)
+
         return JsonResponse(
-            conference,
+            {
+                "conference": conference,
+                # "weather": weather
+            },
             encoder=ConferenceDetailEncoder,
             safe=False
         )
+
     elif request.method == "DELETE":
         count, _ = Conference.objects.filter(id=id).delete()
         return JsonResponse({"deleted": count > 0})
@@ -121,11 +131,27 @@ def api_show_conference(request, id):
             )
 
         conference = Conference.objects.get(id=id)
+
+        # weather = get_weather_data(conference.location.city, conference.location.state.abbreviation)
+
         return JsonResponse(
-            conference,
+            {
+                "conference": conference,
+                # "weather": weather
+                },
             encoder=ConferenceDetailEncoder,
             safe=False
         )
+
+
+        # Use the city and state abbreviation of the Conference's Location
+        # to call the get_weather_data ACL function and get back a dictionary
+        # that contains the weather data
+
+
+
+        # Include the weather data in the JsonResponse (see it in the dictionary
+
 
     """
     Returns the details for the Conference model specified
@@ -188,6 +214,12 @@ def api_list_locations(request):
                 {"message": "Invalid state abbreviation"},
                 status=400,
             )
+
+        picture_url = get_location_photo(
+            content["city"], content["state"].abbreviation
+        )
+        content.update(picture_url)
+
         location = Location.objects.create(**content)
         return JsonResponse(
             location,
@@ -218,11 +250,19 @@ def api_list_locations(request):
 def api_show_location(request, id):
     if request.method == "GET":
         location = Location.objects.get(id=id)
+        # location = Location.objects.get(pk=id)
+        if location.picture_url is None:
+            picture_url = get_location_photo(
+                location.city, location.state.abbreviation
+            )
+            location.picture_url = picture_url["picture_url"]
+            location.save()
         return JsonResponse(
             location,
             encoder=LocationDetailEncoder,
             safe=False,
         )
+
     elif request.method == "DELETE":
         count, _ = Location.objects.filter(id=id).delete()
         return JsonResponse({"deleted": count > 0})
@@ -242,8 +282,8 @@ def api_show_location(request, id):
         #new code
         Location.objects.filter(id=id).update(**content)
 
+
         #copied from get detail
-        location = Location.objects.get(id=id)
         return JsonResponse(
             location,
             encoder=LocationDetailEncoder,
